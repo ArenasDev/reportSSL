@@ -12,6 +12,8 @@ import json
 import os
 from subprocess import Popen, PIPE
 import signal
+import time
+import threading
 import PIL
 from PIL import ImageFont
 from PIL import Image
@@ -21,6 +23,7 @@ from prettytable import PrettyTable
 
 class ReportSSL:
 	def __init__(self):
+		self.output = ''
 		with open('ciphers.json') as j:
 			self.ciphers = json.load(j)
 		self.parseArgs()
@@ -78,8 +81,8 @@ class ReportSSL:
 
 		for result in results:
 			if not result.scan_commands_results[ScanCommand.TLS_FALLBACK_SCSV].supports_fallback_scsv:
-				env = os.environ.copy()
-				env["PATH"] = os.getcwd() + '\\OpenSSL\\bin;' + env["PATH"]
+				# env = os.environ.copy()
+				# env["PATH"] = os.getcwd() + '\\OpenSSL\\bin;' + env["PATH"]
 
 				protocolFlag = '-no_'
 				#Check highest protocol to prevent its use in openssl
@@ -89,10 +92,29 @@ class ReportSSL:
 					print('Potentially vulnerable to downgrade attack. Highest supported protocol is not TLS or SSL.')
 
 
-				p = Popen('openssl.exe s_client -connect ' + sys.argv[1] + ':' + sys.argv[2] + ' -fallback_scsv ' + protocolFlag, env=env, shell=True, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-				p.send_signal(signal.SIGINT)
-				stdout = p.communicate()[0]
-				print(stdout.decode())
+				p = Popen(os.getcwd() + '\\OpenSSL\\bin\\openssl.exe s_client -connect ' + sys.argv[1] + ':' + sys.argv[2] + ' -fallback_scsv ' + protocolFlag, stdin=PIPE, stdout=PIPE, stderr=PIPE)
+
+				self.finishOpenSSL = threading.Event()
+				t = threading.Thread(target=self.outputReader, args=(p, 'Master-Key'))
+				t.start()
+
+				while not self.finishOpenSSL.is_set():
+					time.sleep(1)
+				p.terminate()
+
+				#Handle output to make image
+				data = 'Command: openssl.exe s_client -connect ' + sys.argv[1] + ':' + sys.argv[2] + ' -fallback_scsv ' + protocolFlag + '\n\n'
+				data += self.output.split('-----BEGIN CERTIFICATE-----')[0]
+				data += '[redacted]'
+				data += self.output.split('-----END CERTIFICATE-----')[1]
+
+				self.generateImageAndPrintInfo(f"Downgrade prevention is not provided (server {sys.argv[1]}):", data, 'downgradePrevention')
+
+	def outputReader(self, proc, finish):
+		for line in iter(proc.stdout.readline, b''):
+			if finish in line.decode('utf-8'):
+				self.finishOpenSSL.set()
+			self.output += '{0}'.format(line.decode('utf-8'))
 
 
 	def initiateScan(self, commands):
@@ -112,12 +134,15 @@ class ReportSSL:
 		data += '-' * len(prev) + '\n'
 
 		#Delete first whitespace result of deleting borders
-		table = str(pt).split('\n')[0][1:] + '\n'
-		table += '-' * len(str(pt).split('\n')[0]) + '\n'
-		for line in str(pt).split('\n')[1:]:
-			table += line[1:] + '\n'
-		print(table)
-		data += table
+		if isinstance(pt, PrettyTable):
+			table = str(pt).split('\n')[0][1:] + '\n'
+			table += '-' * len(str(pt).split('\n')[0]) + '\n'
+			for line in str(pt).split('\n')[1:]:
+				table += line[1:] + '\n'
+			print(table)
+			data += table
+		else:
+			data += pt
 		self.text2png(data, imageName + '.png')
 
 	def text2png(self, text, fullpath, color = "#000", bgcolor = "#FFF", fontsize = 30, padding = 10):
