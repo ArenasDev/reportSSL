@@ -27,7 +27,7 @@ class ReportSSL:
 		with open('ciphers.json') as j:
 			self.ciphers = json.load(j)
 		self.parseArgs()
-		# self.checkDeprecatedTLS()
+		self.checkDeprecatedTLS()
 		self.downgradePrevention()
 
 
@@ -143,7 +143,7 @@ class ReportSSL:
 			data += table
 		else:
 			data += pt
-		self.text2png(data, imageName + '.png')
+		self.text2png(data, 'images/' + imageName + '.png')
 
 	def text2png(self, text, fullpath, color = "#000", bgcolor = "#FFF", fontsize = 30, padding = 10):
 		font = ImageFont.truetype("consola.ttf", fontsize)
@@ -160,10 +160,6 @@ class ReportSSL:
 			y += line_height
 
 		img.save(fullpath)
-
-
-
-
 
 if __name__ == '__main__':
 	ReportSSL()
