@@ -27,8 +27,11 @@ class ReportSSL:
 		with open('ciphers.json') as j:
 			self.ciphers = json.load(j)
 		self.parseArgs()
+		self.checkCertificate()
 		self.checkDeprecatedTLS()
+		self.checkTLSv1_3()
 		self.downgradePrevention()
+		self.OCSPStapling()
 
 
 	def parseArgs(self):
@@ -52,6 +55,17 @@ class ReportSSL:
 			print('Execute: python reportSSL.py www.google.es 443')
 			sys.exit()
 
+	def checkCertificate(self):
+		results = self.initiateScan({ScanCommand.CERTIFICATE_INFO})
+
+		for result in results:
+			for cert in result.scan_commands_results[ScanCommand.CERTIFICATE_INFO].certificate_deployments:
+				#Check if hostname matches certificate name
+				if not cert.leaf_certificate_subject_matches_hostname:
+					data = 'Hostname: ' + result.scan_commands_results[ScanCommand.CERTIFICATE_INFO].hostname_used_for_server_name_indication + '\n'
+					data += 'Certificate name: ' + str(result.scan_commands_results[ScanCommand.CERTIFICATE_INFO].certificate_deployments[0].received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0] + '\n'
+					self.generateImageAndPrintInfo('Certificate is not trusted because it does not match hostname', data, 'CertificateUntrustedNameMismatch', None, None)
+				
 	def checkDeprecatedTLS(self):
 		results = self.initiateScan({ScanCommand.TLS_1_0_CIPHER_SUITES, ScanCommand.TLS_1_1_CIPHER_SUITES})
 
@@ -72,18 +86,19 @@ class ReportSSL:
 						except Exception:
 							print(f'Cipher {cipher.cipher_suite.name} not found in database')
 					if len(tls.accepted_cipher_suites) > 0:
-						self.generateImageAndPrintInfo(f"Accepted cipher suites for {key} (server {sys.argv[1]}):", pt, key)
+						self.generateImageAndPrintInfo(f"Accepted cipher suites for {key} (server {sys.argv[1]}):", pt, key, 0, 1 + len(str(pt).split('\n')))
 				except KeyError:
 					print(key + ' scan failed')
+
+	def checkTLSv1_3(self):
+		if self.highestProtocol.lower() != 'tls_1_3':
+			self.generateImageAndPrintInfo('Server does not support TLSv1.3', 'The server does not support TLSv1.3 which is the only version of TLS that currently has no known flaws or exploitable weaknesses.\nHighest supported protocol is ' + self.highestProtocol.replace('TLS_', 'TLSv').replace('SSL_', 'SSLv').replace('_', '.'), 'TLSv1.3NotSupported', None, None)
 
 	def downgradePrevention(self):
 		results = self.initiateScan({ScanCommand.TLS_FALLBACK_SCSV})
 
 		for result in results:
 			if not result.scan_commands_results[ScanCommand.TLS_FALLBACK_SCSV].supports_fallback_scsv:
-				# env = os.environ.copy()
-				# env["PATH"] = os.getcwd() + '\\OpenSSL\\bin;' + env["PATH"]
-
 				protocolFlag = '-no_'
 				#Check highest protocol to prevent its use in openssl
 				if 'tls' in self.highestProtocol.lower() or 'ssl' in self.highestProtocol.lower():
@@ -92,9 +107,9 @@ class ReportSSL:
 					print('Potentially vulnerable to downgrade attack. Highest supported protocol is not TLS or SSL.')
 
 
-				p = Popen(os.getcwd() + '\\OpenSSL\\bin\\openssl.exe s_client -connect ' + sys.argv[1] + ':' + sys.argv[2] + ' -fallback_scsv ' + protocolFlag, stdin=PIPE, stdout=PIPE, stderr=PIPE)
-
 				self.finishOpenSSL = threading.Event()
+				self.output = ''
+				p = Popen(os.getcwd() + '\\OpenSSL\\bin\\openssl.exe s_client -connect ' + sys.argv[1] + ':' + sys.argv[2] + ' -fallback_scsv ' + protocolFlag, stdin=PIPE, stdout=PIPE, stderr=PIPE)
 				t = threading.Thread(target=self.outputReader, args=(p, 'Master-Key'))
 				t.start()
 
@@ -108,14 +123,34 @@ class ReportSSL:
 				data += '[redacted]'
 				data += self.output.split('-----END CERTIFICATE-----')[1]
 
-				self.generateImageAndPrintInfo(f"Downgrade prevention is not provided (server {sys.argv[1]}):", data, 'downgradePrevention')
+				index = None
+				for line in range(len(data)):
+					if 'New,' in data[line] and ', Cipher is ' in data[line]:
+						index = line
+
+				self.generateImageAndPrintInfo(f"Downgrade prevention is not provided (server {sys.argv[1]}):", data, 'downgradePrevention', line, line)
+
+	def OCSPStapling(self):
+		self.finishOpenSSL = threading.Event()
+		self.output = ''
+		p = Popen(os.getcwd() + '\\OpenSSL\\bin\\openssl.exe s_client -connect ' + sys.argv[1] + ':' + sys.argv[2] + ' -status', stdin=PIPE, stdout=PIPE, stderr=PIPE)
+		t = threading.Thread(target=self.outputReader, args=(p, '-----BEGIN CERTIFICATE-----'))
+		t.start()
+
+		while not self.finishOpenSSL.is_set():
+			time.sleep(1)
+		p.terminate()
+
+		for line in self.output.split('\n'):
+			if 'OCSP response: no response sent' in line:
+				self.generateImageAndPrintInfo(f"OCSP Stapling not supported (server {sys.argv[1]}):", '\n'.join(self.output.split('\n')[:self.output.split('\n').index('-----BEGIN CERTIFICATE-----')]), 'OCSPStaplingNotSupported', self.output.split('\n').index(line), self.output.split('\n').index(line))
+				break
 
 	def outputReader(self, proc, finish):
 		for line in iter(proc.stdout.readline, b''):
 			if finish in line.decode('utf-8'):
 				self.finishOpenSSL.set()
 			self.output += '{0}'.format(line.decode('utf-8'))
-
 
 	def initiateScan(self, commands):
 		self.scanner = Scanner()
@@ -126,7 +161,7 @@ class ReportSSL:
 
 		return self.scanner.get_results()
 
-	def generateImageAndPrintInfo(self, prev, pt, imageName):
+	def generateImageAndPrintInfo(self, prev, pt, imageName, startLine, endLine):
 		data = ''
 		print(prev)
 		print('-' * len(prev))
@@ -142,24 +177,39 @@ class ReportSSL:
 			print(table)
 			data += table
 		else:
+			print(pt)
 			data += pt
-		self.text2png(data, 'images/' + imageName + '.png')
+		self.text2png(data, 'images/' + imageName + '(' + sys.argv[1] + '_' + sys.argv[2] + ').png', startLine = startLine, endLine = endLine)
 
-	def text2png(self, text, fullpath, color = "#000", bgcolor = "#FFF", fontsize = 30, padding = 10):
+	def text2png(self, text, fullpath, color = "#000", bgcolor = "#FFF", fontsize = 30, padding = 10, startLine = None, endLine = None):
 		font = ImageFont.truetype("consola.ttf", fontsize)
 
 		width = font.getsize(max(text.split('\n'), key = len))[0] + (padding * 2)
-		line_height = font.getsize(text)[1]
-		img_height = line_height * (len(text.split('\n')) + 1) + padding
-		img = Image.new("RGBA", (width, img_height), bgcolor)
+		lineHeight = font.getsize(text)[1]
+		imgHeight = lineHeight * (len(text.split('\n')) + 1) + padding
+		img = Image.new("RGBA", (width, imgHeight), bgcolor)
 		draw = ImageDraw.Draw(img)
 
 		y = padding
+		#Draw the text
 		for line in text.split('\n'):
 			draw.text((padding, y), line, color, font=font)
-			y += line_height
+			y += lineHeight
 
-		img.save(fullpath)
+		#Draw the highlight rectangle, have to use line instead of rectangle because it does not support line THICCness
+		if startLine != None and endLine != None and endLine >= startLine:
+			#Add 2 to each bound because of the two heading lines
+			if startLine == endLine:
+				endLine += 1
+			startLine += 2
+			endLine += 2
+			point1 = (3, (padding / 2) + 3 + lineHeight * startLine)
+			point2 = (3 + font.getsize(text.split('\n')[startLine])[0] + padding, (padding / 2) + 3 + lineHeight * startLine)
+			point3 = (3 + font.getsize(text.split('\n')[startLine])[0] + padding, padding + 3 + lineHeight * (startLine + (endLine - startLine)))
+			point4 = (3, padding + 3 + lineHeight * (startLine + (endLine - startLine)))
+			draw.line((point1, point2, point3, point4, point1), fill="red", width=5)
+
+		img.save(fullpath, quality=100)
 
 if __name__ == '__main__':
 	ReportSSL()
