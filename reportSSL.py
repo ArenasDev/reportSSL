@@ -95,7 +95,7 @@ class ReportSSL:
 			self.printHelp()
 
 	def printHelp(self):
-		print('Execute:\n\tpython reportSSL.py www.google.es 443\t\t(for silent mode)\n\tpython reportSSL.py --silent www.google.es 443\t\t(for verbose mode)')
+		print('Execute:\n\tpython reportSSL.py www.google.es 443\t\t(for silent mode)\n\tpython reportSSL.py --verbose www.google.es 443\t\t(for verbose mode)')
 		sys.exit()		
 
 	def getAllCiphers(self):
@@ -259,7 +259,7 @@ class ReportSSL:
 			if 'gzip' in res.headers['Content-Encoding']:
 				request = '{}\n{}\r\n{}\r\n\r\n'.format(
 						'-----------REQUEST-----------',
-						prepped.method + ' ' + prepped.url,
+						prepped.method + ' ' + self.host+ ':' + self.port,
 						'\r\n'.join('{}: {}'.format(k, v) for k, v in prepped.headers.items())
 					)
 				response = '-----------RESPONSE-----------'
