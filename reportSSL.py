@@ -33,21 +33,21 @@ class ReportSSL:
 			self.ciphers = json.load(j)
 		self.parseArgsAndCheckConnectivity()
 		self.getAllCiphers()
-		# self.certificate()
-		# self.deprecatedTLS()
-		# self.TLSv1_3()
-		# self.downgradePrevention()
-		# self.OCSPStapling()
-		# self.specificAlg('RC4', None, 'Accepted RC4 cipher suites', 'RC4')
-		# self.specificAlg('3DES', None, 'Server is vulnerable to SWEET32 attacks because it supports block-based algorithms with block size of 64 (3DES)', 'SWEET32')
-		# self.specificAlg('CBC', ["SSLv2",  "SSLv3", "TLSv1.0"], 'Server is vulnerable to BEAST attacks.\nIt supports block-based algorithms (CBC) in SSLv2, SSLv3 or TLSv1.0', 'BEAST')
-		# self.specificAlg('CBC', ["SSLv3"], 'Server is vulnerable to POODLE attacks.\nIt supports block-based algorithms (CBC) in SSLv3', 'POODLE')
-		# self.drown()
-		# self.specificAlg('CBC', ["TLSv1.0", "TLSv1.1", "TLSv1.2"], 'Server is vulnerable to LUCKY13 attacks.\nIt supports block-based algorithms (CBC) in TLS', 'LUCKY13')
-		# self.logjamAndFreak()
-		# self.breach()
-		# self.crime()
-		# self.secureRenegotiation()
+		self.certificate()
+		self.deprecatedTLS()
+		self.TLSv1_3()
+		self.downgradePrevention()
+		self.OCSPStapling()
+		self.specificAlg('RC4', None, 'Accepted RC4 cipher suites', 'RC4')
+		self.specificAlg('3DES', None, 'Server is vulnerable to SWEET32 attacks because it supports block-based algorithms with block size of 64 (3DES)', 'SWEET32')
+		self.specificAlg('CBC', ["SSLv2",  "SSLv3", "TLSv1.0"], 'Server is vulnerable to BEAST attacks.\nIt supports block-based algorithms (CBC) in SSLv2, SSLv3 or TLSv1.0', 'BEAST')
+		self.specificAlg('CBC', ["SSLv3"], 'Server is vulnerable to POODLE attacks.\nIt supports block-based algorithms (CBC) in SSLv3', 'POODLE')
+		self.drown()
+		self.specificAlg('CBC', ["TLSv1.0", "TLSv1.1", "TLSv1.2"], 'Server is vulnerable to LUCKY13 attacks.\nIt supports block-based algorithms (CBC) in TLS', 'LUCKY13')
+		self.logjamAndFreak()
+		self.breach()
+		self.crime()
+		self.secureRenegotiation()
 		self.robot()
 
 		#TODO -> make openssl command a function to reduce code
@@ -150,7 +150,7 @@ class ReportSSL:
 	def deprecatedTLS(self):
 		keys = ["TLSv1.0", "TLSv1.1"]
 
-		print('Checking usage of deprectaed TLS ...', end='', flush=True)
+		print('Checking usage of deprecated TLS ...', end='', flush=True)
 		for key in keys:
 			pt = PrettyTable(border=False)
 			pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)"]
@@ -163,18 +163,18 @@ class ReportSSL:
 					pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name])
 				except Exception:
 					print(f'Cipher {cipher.cipher_suite.name} not found in database')
-			if len(ciphers) > 0:
-				print(' VULNERABLE.')
-				self.generateImageAndPrintInfo(f"Accepted cipher suites for {key} (server {self.host}):", pt, key, 0, 1 + len(str(pt).split('\n')))
-			else:
-				print()
+		if len(ciphers) > 0:
+			print(' VULNERABLE.')
+			self.generateImageAndPrintInfo(f"Accepted cipher suites for {key} (server {self.host}):", pt, key, 0, 1 + len(str(pt).split('\n')))
+		else:
+			print()
 
 	def specificAlg(self, alg, protos, header, fileName):
 		if protos != None:
 			pr = ', '.join(protos)
 			print(f'Checking {alg} in {pr} ...', end='', flush=True)
 		else:
-			print(f'Checking {alg} in ...', end='', flush=True)
+			print(f'Checking {alg} ...', end='', flush=True)
 		pt = PrettyTable(border=False)
 		pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)"]
 		pt.align = 'l'
@@ -223,7 +223,8 @@ class ReportSSL:
 		logjam = False
 		freak = False
 		for key in ["TLSv1.0", "TLSv1.1", "TLSv1.2"]:
-			pt.add_row([key, '', '', '', '', '', '', ''])
+			ptL.add_row([key, '', '', '', '', '', '', ''])
+			ptF.add_row([key, '', '', '', '', '', '', ''])
 			for cipher in self.allCiphers[key]:
 				elem = self.ciphers[cipher.cipher_suite.name]
 				if '_DHE_' in cipher.cipher_suite.name:
@@ -234,14 +235,14 @@ class ReportSSL:
 						freak = True
 						ptF.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, cipher.ephemeral_key.size, cipher.ephemeral_key.type])
 
-			if freak:
-				print(' VULNERABLE FOR BOTH.')
-				self.generateImageAndPrintInfo(f"Server is vulnerable to FREAK attacks.\nIt supports Ephemeral Diffie-Hellman algorithms (EDH) with key sizes of 512 or lower (server {self.host}):", ptF, 'LOGJAM', None, None)
-			elif logjam:
-				print(' VULNERABLE FOR LOGJAM.')
-				self.generateImageAndPrintInfo(f"Server is vulnerable to LOGJAM attacks.\nIt supports Ephemeral Diffie-Hellman algorithms (EDH) with key sizes of 1024 or lower (server {self.host}):", ptL, 'LOGJAM', None, None)
-			else:
-				print()
+		if freak:
+			print(' VULNERABLE FOR BOTH.')
+			self.generateImageAndPrintInfo(f"Server is vulnerable to FREAK attacks.\nIt supports Ephemeral Diffie-Hellman algorithms (EDH) with key sizes of 512 or lower (server {self.host}):", ptF, 'LOGJAM', None, None)
+		elif logjam:
+			print(' VULNERABLE FOR LOGJAM.')
+			self.generateImageAndPrintInfo(f"Server is vulnerable to LOGJAM attacks.\nIt supports Ephemeral Diffie-Hellman algorithms (EDH) with key sizes of 1024 or lower (server {self.host}):", ptL, 'LOGJAM', None, None)
+		else:
+			print()
 
 	def breach(self):
 		print('Checking BREACH ...', end='', flush=True)
@@ -380,7 +381,7 @@ class ReportSSL:
 		print('Checking support of TLSv1.3 ...', end='', flush=True)
 		if len(self.allCiphers["TLSv1.3"]) == 0:
 			print(' NOT SUPPORTED.')
-			self.generateImageAndPrintInfo('Server does not support TLSv1.3', 'The server does not support TLSv1.3 which is the only version of TLS that currently has no known flaws or exploitable weaknesses.\nHighest supported protocol is ' + self.highestProtocol.replace('TLS_', 'TLSv').replace('SSL_', 'SSLv').replace('_', '.'), 'TLSv1.3NotSupported', None, None)
+			self.generateImageAndPrintInfo('Server does not support TLSv1.3', 'The server does not support TLSv1.3 which is the only version of TLS\nthat currently has no known flaws or exploitable weaknesses.\n\nHighest supported protocol is ' + self.highestProtocol.replace('TLS_', 'TLSv').replace('SSL_', 'SSLv').replace('_', '.'), 'TLSv1.3NotSupported', None, None)
 		else:
 			print()
 

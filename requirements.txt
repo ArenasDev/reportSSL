@@ -1,1 +1,15 @@
-sslyze==3.0.4
+certifi==2020.4.5.1
+cffi==1.14.0
+chardet==3.0.4
+cryptography==2.9
+idna==2.9
+nassl==3.0.0
+Pillow==7.1.2
+prettytable==0.7.2
+pycparser==2.20
+requests==2.23.0
+six==1.15.0
+sslyze==3.0.6
+tls-parser==1.2.2
+typing-extensions==3.7.4.2
+urllib3==1.25.9
