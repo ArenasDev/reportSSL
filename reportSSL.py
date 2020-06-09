@@ -11,16 +11,14 @@ import sys
 import json
 import os
 from subprocess import Popen, PIPE
-import signal
 import time
 import threading
+import datetime
 from requests import Request, Session
-import PIL
 from PIL import ImageFont
 from PIL import Image
 from PIL import ImageDraw
 from prettytable import PrettyTable
-import binascii
 import urllib3
 urllib3.disable_warnings()
 
@@ -51,7 +49,6 @@ class ReportSSL:
 		self.robot()
 
 		#TODO -> make openssl command a function to reduce code
-		#TODO -> get security information from https://ciphersuite.info/cs/ of each cipher
 		'''
 		TIME ->
 		HEIST ->
@@ -112,8 +109,6 @@ class ReportSSL:
 					tls = result.scan_commands_results[keys[key]]
 					for cipher in tls.accepted_cipher_suites:
 						try:
-							elem = self.ciphers[cipher.cipher_suite.name]
-							# print(cipher.cipher_suite)
 							self.allCiphers[key].append(cipher)
 						except Exception:
 							print(f'Cipher {cipher.cipher_suite.name} not found in database')
@@ -134,7 +129,6 @@ class ReportSSL:
 	def certificate(self):
 		print('Checking certificate ...', end='', flush=True)
 		results = self.initiateScan({ScanCommand.CERTIFICATE_INFO})
-		check = False
 
 		for result in results:
 			for cert in result.scan_commands_results[ScanCommand.CERTIFICATE_INFO].certificate_deployments:
@@ -153,14 +147,14 @@ class ReportSSL:
 		print('Checking usage of deprecated TLS ...', end='', flush=True)
 		for key in keys:
 			pt = PrettyTable(border=False)
-			pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)"]
+			pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Security"]
 			pt.align = 'l'
 			ciphers = self.allCiphers[key]
 			
 			for cipher in ciphers:
 				try:
 					elem = self.ciphers[cipher.cipher_suite.name]
-					pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name])
+					pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, elem[5]])
 				except Exception:
 					print(f'Cipher {cipher.cipher_suite.name} not found in database')
 		if len(ciphers) > 0:
@@ -176,19 +170,19 @@ class ReportSSL:
 		else:
 			print(f'Checking {alg} ...', end='', flush=True)
 		pt = PrettyTable(border=False)
-		pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)"]
+		pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Security"]
 		pt.align = 'l'
 		check = False
 		#if no protocol is specified, check all
 		if protos == None:
 			protos = self.allCiphers.keys()
 		for key in protos:
-			pt.add_row([key, '', '', '', '', ''])
+			pt.add_row([key, '', '', '', '', '', ''])
 			for cipher in self.allCiphers[key]:
 				elem = self.ciphers[cipher.cipher_suite.name]
 				if alg in cipher.cipher_suite.name:
 					check = True
-					pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name])
+					pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, elem[5]])
 
 		if check:
 			print(' VULNERABLE.')
@@ -201,11 +195,11 @@ class ReportSSL:
 		if len(self.allCiphers["SSLv2"]) > 0:
 			print('ciphers in SSLv2')
 			pt = PrettyTable(border=False)
-			pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)"]
+			pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Security"]
 			pt.align = 'l'
 			for cipher in self.allCiphers["SSLv2"]:
 				elem = self.ciphers[cipher.cipher_suite.name]
-				pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name])
+				pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name], elem[5])
 
 			print(' VULNERABLE.')
 			self.generateImageAndPrintInfo(f"Server is vulnerable to DROWN attacks because it supports SSLv2 (server {self.host}):", pt, 'DROWN', None, None)
@@ -215,25 +209,25 @@ class ReportSSL:
 	def logjamAndFreak(self):
 		print('Checking LOGJAM and FREAK ...', end='', flush=True)
 		ptL = PrettyTable(border=False)
-		ptL.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Key Size", "Key Ex. Type"]
+		ptL.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Key Size", "Key Ex. Type", "Security"]
 		ptL.align = 'l'
 		ptF = PrettyTable(border=False)
-		ptF.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Key Size", "Key Ex. Type"]
+		ptF.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Key Size", "Key Ex. Type", "Security"]
 		ptF.align = 'l'
 		logjam = False
 		freak = False
 		for key in ["TLSv1.0", "TLSv1.1", "TLSv1.2"]:
-			ptL.add_row([key, '', '', '', '', '', '', ''])
-			ptF.add_row([key, '', '', '', '', '', '', ''])
+			ptL.add_row([key, '', '', '', '', '', '', '', ''])
+			ptF.add_row([key, '', '', '', '', '', '', '', ''])
 			for cipher in self.allCiphers[key]:
 				elem = self.ciphers[cipher.cipher_suite.name]
 				if '_DHE_' in cipher.cipher_suite.name:
 					if cipher.ephemeral_key.size <= 1024:
 						logjam = True
-						ptL.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, cipher.ephemeral_key.size, cipher.ephemeral_key.type])
+						ptL.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, cipher.ephemeral_key.size, cipher.ephemeral_key.type, elem[5]])
 					if cipher.ephemeral_key.size <= 512:
 						freak = True
-						ptF.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, cipher.ephemeral_key.size, cipher.ephemeral_key.type])
+						ptF.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, cipher.ephemeral_key.size, cipher.ephemeral_key.type, elem[5]])
 
 		if freak:
 			print(' VULNERABLE FOR BOTH.')
@@ -282,7 +276,6 @@ class ReportSSL:
 				res.close()
 
 				data = request + response
-				index = None
 				for line in data.split('\n'):
 					if 'Content-Encoding' in line:
 						print(' VULNERABLE.')
@@ -353,7 +346,7 @@ class ReportSSL:
 			enumResult = result.scan_commands_results[ScanCommand.ROBOT].robot_result.value
 			if enumResult <= 2:
 				pt = PrettyTable(border=False)
-				pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)"]
+				pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Security"]
 				pt.align = 'l'
 				for key in self.allCiphers.keys():
 					ciphers = self.allCiphers[key]
@@ -364,7 +357,7 @@ class ReportSSL:
 							if elem[1] in nonPSK:
 								check = True
 								print(elem)
-								pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name])
+								pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, elem[5]])
 						except Exception:
 								print(f'Cipher {cipher.cipher_suite.name} not found in database')
 				if check:
@@ -481,7 +474,7 @@ class ReportSSL:
 		else:
 			self.printt(pt)
 			data += pt
-		self.text2png(data, self.imageFolder + '/' + imageName + '(' + self.host + '_' + self.port + ').png', startLine = startLine, endLine = endLine)
+		self.text2png(data, self.imageFolder + '/' + imageName + '(' + self.host + '_' + self.port + ')_'+datetime.datetime.now().strftime("%d_%m_%Y_%H_%M")+'.png', startLine = startLine, endLine = endLine)
 
 	def printt(self, text):
 		if self.verbose:
