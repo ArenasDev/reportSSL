@@ -143,6 +143,7 @@ class ReportSSL:
 				
 	def deprecatedTLS(self):
 		keys = ["TLSv1.0", "TLSv1.1"]
+		check = False
 
 		print('Checking usage of deprecated TLS ...', end='', flush=True)
 		for key in keys:
@@ -157,10 +158,12 @@ class ReportSSL:
 					pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, elem[5]])
 				except Exception:
 					print(f'Cipher {cipher.cipher_suite.name} not found in database')
-		if len(ciphers) > 0:
-			print(' VULNERABLE.')
-			self.generateImageAndPrintInfo(f"Accepted cipher suites for {key} (server {self.host}):", pt, key, 0, 1 + len(str(pt).split('\n')))
-		else:
+			if len(ciphers) > 0:
+				if not check:
+					print(' VULNERABLE')
+				check = True
+				self.generateImageAndPrintInfo(f"Accepted cipher suites for {key} (server {self.host}):", pt, key, 0, 1 + len(str(pt).split('\n')))
+		if not check:
 			print()
 
 	def specificAlg(self, alg, protos, header, fileName):
