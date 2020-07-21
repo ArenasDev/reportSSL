@@ -7,6 +7,7 @@ from sslyze import (
 )
 from sslyze.errors import ConnectionToServerFailed
 from sslyze.errors import ServerHostnameCouldNotBeResolved
+from timeit import default_timer as timer
 import sys
 import json
 import os
@@ -22,7 +23,7 @@ from prettytable import PrettyTable
 import urllib3
 urllib3.disable_warnings()
 
-
+#TODO, move all openssl executions to a separate method and reduce code
 class ReportSSL:
 	def __init__(self):
 		self.output = ''
@@ -116,7 +117,9 @@ class ReportSSL:
 					print(key + ' scan failed')
 
 				#Check if server has cipher order preference
+				print(tls.cipher_suite_preferred_by_server)
 				if tls.cipher_suite_preferred_by_server == None:
+					print(key)
 					order.append(key)
 
 		if len(order) > 0:
@@ -182,10 +185,11 @@ class ReportSSL:
 		for key in protos:
 			pt.add_row([key, '', '', '', '', '', ''])
 			for cipher in self.allCiphers[key]:
-				elem = self.ciphers[cipher.cipher_suite.name]
-				if alg in cipher.cipher_suite.name:
-					check = True
-					pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, elem[5]])
+				if cipher.cipher_suite.name in self.ciphers.keys():
+					elem = self.ciphers[cipher.cipher_suite.name]
+					if alg in cipher.cipher_suite.name:
+						check = True
+						pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, elem[5]])
 
 		if check:
 			print(' VULNERABLE.')
@@ -286,6 +290,8 @@ class ReportSSL:
 						break
 			else:
 				print()
+		else:
+			print()
 
 	def crime(self):
 		print('Checking CRIME ...', end='', flush=True)
@@ -295,15 +301,26 @@ class ReportSSL:
 		t = threading.Thread(target=self.outputReader, args=(p, 'Compression:'))
 		t.start()
 
+		start = timer()
 		while not self.finishOpenSSL.is_set():
 			time.sleep(1)
+			if (timer() - start) > 10:
+				print(' TIMEOUT.')
+				return
 		p.terminate()
+
+		# print()
+		# print(self.output)
+		# print()
 
 		#Handle output to make image
 		data = 'Command: openssl.exe s_client -connect ' + self.host + ':' + self.port + '\n\n'
-		data += self.output.split('-----BEGIN CERTIFICATE-----')[0]
-		data += '[redacted]'
-		data += self.output.split('-----END CERTIFICATE-----')[1]
+		if '-----BEGIN CERTIFICATE-----' in data:
+			data += self.output.split('-----BEGIN CERTIFICATE-----')[0]
+			data += '[redacted]'
+			data += self.output.split('-----END CERTIFICATE-----')[1]
+		else:
+			data += self.output
 
 		for line in range(len(data)):
 			if 'Compression:' in data[line] and 'NONE' not in data[line]:
@@ -320,15 +337,22 @@ class ReportSSL:
 		t = threading.Thread(target=self.outputReader, args=(p, 'Secure Renegotiation'))
 		t.start()
 
+		start = timer()
 		while not self.finishOpenSSL.is_set():
 			time.sleep(1)
+			if (timer() - start) > 10:
+				print(' TIMEOUT.')
+				return
 		p.terminate()
 
 		#Handle output to make image
 		data = 'Command: openssl.exe s_client -connect ' + self.host + ':' + self.port + '\n\n'
-		data += self.output.split('-----BEGIN CERTIFICATE-----')[0]
-		data += '[redacted]'
-		data += self.output.split('-----END CERTIFICATE-----')[1]
+		if '-----BEGIN CERTIFICATE-----' in data:
+			data += self.output.split('-----BEGIN CERTIFICATE-----')[0]
+			data += '[redacted]'
+			data += self.output.split('-----END CERTIFICATE-----')[1]
+		else:
+			data += self.output
 
 		for line in range(len(data)):
 			if 'Secure Renegotiation' in data[line] and 'IS NOT' in data[line]:
@@ -402,8 +426,12 @@ class ReportSSL:
 				t = threading.Thread(target=self.outputReader, args=(p, 'Master-Key'))
 				t.start()
 
+				start = timer()
 				while not self.finishOpenSSL.is_set():
 					time.sleep(1)
+					if (timer() - start) > 10:
+						print(' TIMEOUT.')
+						return
 				p.terminate()
 
 				#Handle output to make image
@@ -428,8 +456,12 @@ class ReportSSL:
 		t = threading.Thread(target=self.outputReader, args=(p, '-----BEGIN CERTIFICATE-----'))
 		t.start()
 
+		start = timer()
 		while not self.finishOpenSSL.is_set():
 			time.sleep(1)
+			if (timer() - start) > 10:
+				print(' TIMEOUT.')
+				return
 		p.terminate()
 
 		for line in self.output.split('\n'):
