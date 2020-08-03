@@ -117,9 +117,7 @@ class ReportSSL:
 					print(key + ' scan failed')
 
 				#Check if server has cipher order preference
-				print(tls.cipher_suite_preferred_by_server)
 				if tls.cipher_suite_preferred_by_server == None:
-					print(key)
 					order.append(key)
 
 		if len(order) > 0:
