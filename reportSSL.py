@@ -34,6 +34,7 @@ class ReportSSL:
 		self.getAllCiphers()
 		self.certificate()
 		self.deprecatedTLS()
+		self.deprecatedSSL()
 		self.TLSv1_3()
 		self.downgradePrevention()
 		self.OCSPStapling()
@@ -147,6 +148,31 @@ class ReportSSL:
 		check = False
 
 		print('Checking usage of deprecated TLS ...', end='', flush=True)
+		for key in keys:
+			pt = PrettyTable(border=False)
+			pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Security"]
+			pt.align = 'l'
+			ciphers = self.allCiphers[key]
+			
+			for cipher in ciphers:
+				try:
+					elem = self.ciphers[cipher.cipher_suite.name]
+					pt.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, elem[5]])
+				except Exception:
+					print(f'Cipher {cipher.cipher_suite.name} not found in database')
+			if len(ciphers) > 0:
+				if not check:
+					print(' VULNERABLE')
+				check = True
+				self.generateImageAndPrintInfo(f"Accepted cipher suites for {key} (server {self.host}):", pt, key, 0, 1 + len(str(pt).split('\n')))
+		if not check:
+			print()
+
+	def deprecatedSSL(self):
+		keys = ["SSLv2", "SSLv3"]
+		check = False
+
+		print('Checking usage of deprecated SSL ...', end='', flush=True)
 		for key in keys:
 			pt = PrettyTable(border=False)
 			pt.field_names = ["Hexcode", "Cipher Suite Name (OpenSSL)", "Key Exch.", "Encryption", "Bits", "Cipher Suite Name (IANA/RFC)", "Security"]
