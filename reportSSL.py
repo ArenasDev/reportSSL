@@ -15,7 +15,7 @@ from subprocess import Popen, PIPE
 import time
 import threading
 import datetime
-from requests import Request, Session
+import requests
 from PIL import ImageFont
 from PIL import Image
 from PIL import ImageDraw
@@ -127,22 +127,81 @@ class ReportSSL:
 		else:
 			print()
 
-	#check
 	def certificate(self):
 		print('Checking certificate ...', end='', flush=True)
+		check = False
 		results = self.initiateScan({ScanCommand.CERTIFICATE_INFO})
 
 		for result in results:
-			for cert in result.scan_commands_results[ScanCommand.CERTIFICATE_INFO].certificate_deployments:
-				#Check if hostname matches certificate name
+			certs = result.scan_commands_results[ScanCommand.CERTIFICATE_INFO].certificate_deployments
+			#Check if hostname matches certificate name
+			for cert in certs:
 				if not cert.leaf_certificate_subject_matches_hostname:
 					check = True
 					data = 'Hostname: ' + result.scan_commands_results[ScanCommand.CERTIFICATE_INFO].hostname_used_for_server_name_indication + '\n'
-					data += 'Certificate name: ' + str(result.scan_commands_results[ScanCommand.CERTIFICATE_INFO].certificate_deployments[0].received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0] + '\n'
-					print(' HOSTNAME MISMATCH', end='', flush=True)
+					data += 'Certificate name: ' + str(cert.received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]
 					self.generateImageAndPrintInfo('Certificate is not trusted because it does not match hostname', data, 'CertificateUntrustedNameMismatch', None, None)
-		print()
-				
+				#Check if certificate chain is sent in the right order
+				if not cert.received_chain_has_valid_order:
+					check = True
+					#Loop certs to get order
+					counter = 1		
+					data = ''
+					for cert2 in cert.received_certificate_chain[::-1]:
+						data += f"{counter}-> {str(cert2.subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]}\n"
+						counter += 1
+					self.generateImageAndPrintInfo('Certificate chain is not sent in the right order', data[:-1], 'CertificateChainWrongOrder', None, None)
+				#Check if leaf certificate is Extended Validation, according to Mozilla
+				if not cert.leaf_certificate_is_ev:
+					check = True
+					data = 'Leaf Certificate: ' + str(cert.received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]
+					self.generateImageAndPrintInfo('Leaf certificate is not EV (Extended Validation)', data, 'LeafCertificateNotEV', None, None)
+				#Check if leaf certificate has OCSP must-staple extension
+				if not cert.leaf_certificate_has_must_staple_extension:
+					check = True
+					data = 'Leaf Certificate: ' + str(cert.received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]
+					self.generateImageAndPrintInfo('Leaf certificate does not have OCSP must-staple extension', data, 'LeafCertificateNotOCSPMustStaple', None, None)
+				#Check if any certificate has SHA1 signature
+				if cert.verified_chain_has_sha1_signature:
+					print('sha1')
+					check = True
+					data = ''
+					for cert2 in cert.received_certificate_chain[::-1]:
+						if cert2.signature_hash_algorithm.name.lower() == 'sha1':
+							data += f"{str(cert2.subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]} SHA1:{print(cert2.fingerprint(cert2.signature_hash_algorithm)).decode('utf-8')}\n"
+					self.generateImageAndPrintInfo('Some certificates have SHA1 signatures', data[:-1], 'SHA1Signatures', None, None)
+				# Check not_valid_before, not_valid_after and total validity period
+				counter = 0
+				for c2 in cert.received_certificate_chain:
+					n = datetime.datetime.now()
+					if n < c2.not_valid_before:
+						data = f"Certificate {c2.subject} is being used before its validity period\n"
+						data += f"Checked on {n.strftime('%d/%m/%Y-%H:%M')} with a not_valid_before of {c2.not_valid_before.strftime('%d/%m/%Y-%H:%M')}. Difference of {self.formatTimedelta(c2.not_valid_before - n)}"
+						self.generateImageAndPrintInfo('Certificate used before its validity period', data, 'Certificate' + str(counter) + '_Before', None, None)
+					if n > c2.not_valid_after:
+						data = f"Certificate {c2.subject} is being used after its validity period\n"
+						data += f"Checked on {n.strftime('%d/%m/%Y-%H:%M')} with a not_valid_after of {c2.not_valid_after.strftime('%d/%m/%Y-%H:%M')}. Difference of {self.formatTimedelta(n - c2.not_valid_before)}"
+						self.generateImageAndPrintInfo('Certificate used after its validity period', data, 'Certificate' + str(counter) + '_After', None, None)
+					if (c2.not_valid_after - c2.not_valid_before).days > 398:
+						# 398 days as stated by Apple and then followed by Mozilla and Google
+						data = f"Certificate {c2.subject} has a validity period of over 398 (the standard of Apple, Mozilla and Google)\n"
+						data += f"Checked on {n.strftime('%d/%m/%Y-%H:%M')} the validity period is {(c2.not_valid_after - c2.not_valid_before).days} days"
+						self.generateImageAndPrintInfo('Certificate has a validity period of over 398 days', data, 'Certificate' + str(counter) + '_ValidityPeriod', None, None)
+					counter += 1
+		if check:
+			print(' MISCONFIGURATION')
+		else:
+			print()
+
+	def formatTimedelta(self, delta):
+		hours, remainder = divmod(delta.seconds, 3600)
+		minutes, seconds = divmod(remainder, 60)
+		res = ''
+		if delta.days > 0:
+			res = f'{delta.days} days, '
+		res += f'{hours} hours, {minutes} minutes, {seconds} seconds'
+		return res
+
 	def deprecatedTLS(self):
 		keys = ["TLSv1.0", "TLSv1.1"]
 		check = False
@@ -271,13 +330,18 @@ class ReportSSL:
 
 	def breach(self):
 		print('Checking BREACH ...', end='', flush=True)
-		s = Session()
+		s = requests.Session()
 		headers = {"Host" : self.host, "Accept-Encoding" : "compress, gzip"}
-		req = Request('GET', "https://" + self.host+ ':' + self.port,  headers = headers)
+		req = requests.Request('GET', "https://" + self.host+ ':' + self.port,  headers = headers)
 		prepped = req.prepare()
-		# , proxies = {"https" : "127.0.0.1:8080"}
-		res = s.send(prepped, verify=False, allow_redirects=True, stream=True)
-		# print(res.raw.read(100))
+		try:
+			res = s.send(prepped, verify=False, allow_redirects=True, stream=True)
+		except requests.exceptions.TooManyRedirects:
+			print(' too many redirects.')
+			return
+		except requests.exceptions.ConnectionError:
+			print(' connection error.')
+			return
 
 		if 'Content-Encoding' in res.headers.keys():
 			#May exist other values, havent found them yet
@@ -436,6 +500,7 @@ class ReportSSL:
 		for result in results:
 			if not result.scan_commands_results[ScanCommand.TLS_FALLBACK_SCSV].supports_fallback_scsv:
 				protocolFlag = '-no_'
+				checkPrint = False
 				#Check highest protocol to prevent its use in openssl
 				if 'tls' in self.highestProtocol.lower() or 'ssl' in self.highestProtocol.lower():
 					protocolFlag += self.highestProtocol.lower().replace('tls_', 'tls').replace('ssl_', 'ssl').replace('_0', '')
@@ -467,9 +532,10 @@ class ReportSSL:
 				for line in range(len(data)):
 					if 'New,' in data[line] and ', Cipher is ' in data[line]:
 						print(' NOT SUPPORTED.')
+						checkPrint = True
 						self.generateImageAndPrintInfo(f"Downgrade prevention is not provided (server {self.host}):", data, 'downgradePrevention', line, line)
 						break
-			else:
+			if not checkPrint:
 				print()
 
 	def OCSPStapling(self):
@@ -489,7 +555,7 @@ class ReportSSL:
 		p.terminate()
 
 		for line in self.output.split('\n'):
-			if 'OCSP response: no response sent' in line:
+			if 'OCSP response: no response received' in line:
 				print(' NOT SUPPORTED.')
 				self.generateImageAndPrintInfo(f"OCSP Stapling not supported (server {self.host}):", '\n'.join(self.output.split('\n')[:self.output.split('\n').index('-----BEGIN CERTIFICATE-----')]), 'OCSPStaplingNotSupported', self.output.split('\n').index(line), self.output.split('\n').index(line))
 				return
