@@ -310,8 +310,8 @@ class ReportSSL:
 			ptL.add_row([key, '', '', '', '', '', '', '', ''])
 			ptF.add_row([key, '', '', '', '', '', '', '', ''])
 			for cipher in self.allCiphers[key]:
-				elem = self.ciphers[cipher.cipher_suite.name]
-				if '_DHE_' in cipher.cipher_suite.name:
+				if cipher.cipher_suite.name in self.ciphers.keys() and '_DHE_' in cipher.cipher_suite.name:
+					elem = self.ciphers[cipher.cipher_suite.name]
 					if cipher.ephemeral_key.size <= 1024:
 						logjam = True
 						ptL.add_row([elem[1], elem[0], elem[2], elem[3], elem[4], cipher.cipher_suite.name, cipher.ephemeral_key.size, cipher.ephemeral_key.type, elem[5]])
@@ -498,9 +498,9 @@ class ReportSSL:
 		results = self.initiateScan({ScanCommand.TLS_FALLBACK_SCSV})
 
 		for result in results:
+			checkPrint = False
 			if not result.scan_commands_results[ScanCommand.TLS_FALLBACK_SCSV].supports_fallback_scsv:
 				protocolFlag = '-no_'
-				checkPrint = False
 				#Check highest protocol to prevent its use in openssl
 				if 'tls' in self.highestProtocol.lower() or 'ssl' in self.highestProtocol.lower():
 					protocolFlag += self.highestProtocol.lower().replace('tls_', 'tls').replace('ssl_', 'ssl').replace('_0', '')
