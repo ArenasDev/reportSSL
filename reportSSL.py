@@ -139,7 +139,8 @@ class ReportSSL:
 				if not cert.leaf_certificate_subject_matches_hostname:
 					check = True
 					data = 'Hostname: ' + result.scan_commands_results[ScanCommand.CERTIFICATE_INFO].hostname_used_for_server_name_indication + '\n'
-					data += 'Certificate name: ' + str(cert.received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]
+					print(cert.received_certificate_chain[0].subject)
+					data += 'Certificate name: ' + str(cert.received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '')
 					self.generateImageAndPrintInfo('Certificate is not trusted because it does not match hostname', data, 'CertificateUntrustedNameMismatch', None, None)
 				#Check if certificate chain is sent in the right order
 				if not cert.received_chain_has_valid_order:
@@ -148,18 +149,18 @@ class ReportSSL:
 					counter = 1		
 					data = ''
 					for cert2 in cert.received_certificate_chain[::-1]:
-						data += f"{counter}-> {str(cert2.subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]}\n"
+						data += f"{counter}-> {str(cert2.subject).replace('<Name(', '').replace(')>', '')}\n"
 						counter += 1
 					self.generateImageAndPrintInfo('Certificate chain is not sent in the right order', data[:-1], 'CertificateChainWrongOrder', None, None)
 				#Check if leaf certificate is Extended Validation, according to Mozilla
 				if not cert.leaf_certificate_is_ev:
 					check = True
-					data = 'Leaf Certificate: ' + str(cert.received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]
+					data = 'Leaf Certificate: ' + str(cert.received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '')
 					self.generateImageAndPrintInfo('Leaf certificate is not EV (Extended Validation)', data, 'LeafCertificateNotEV', None, None)
 				#Check if leaf certificate has OCSP must-staple extension
 				if not cert.leaf_certificate_has_must_staple_extension:
 					check = True
-					data = 'Leaf Certificate: ' + str(cert.received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]
+					data = 'Leaf Certificate: ' + str(cert.received_certificate_chain[0].subject).replace('<Name(', '').replace(')>', '')
 					self.generateImageAndPrintInfo('Leaf certificate does not have OCSP must-staple extension', data, 'LeafCertificateNotOCSPMustStaple', None, None)
 				#Check if any certificate has SHA1 signature
 				if cert.verified_chain_has_sha1_signature:
@@ -168,7 +169,7 @@ class ReportSSL:
 					data = ''
 					for cert2 in cert.received_certificate_chain[::-1]:
 						if cert2.signature_hash_algorithm.name.lower() == 'sha1':
-							data += f"{str(cert2.subject).replace('<Name(', '').replace(')>', '').split('CN=')[1].split(',')[0]} SHA1:{print(cert2.fingerprint(cert2.signature_hash_algorithm)).decode('utf-8')}\n"
+							data += f"{str(cert2.subject).replace('<Name(', '').replace(')>', '')} SHA1:{print(cert2.fingerprint(cert2.signature_hash_algorithm)).decode('utf-8')}\n"
 					self.generateImageAndPrintInfo('Some certificates have SHA1 signatures', data[:-1], 'SHA1Signatures', None, None)
 				# Check not_valid_before, not_valid_after and total validity period
 				counter = 0
