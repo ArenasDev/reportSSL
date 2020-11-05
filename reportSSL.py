@@ -525,9 +525,12 @@ class ReportSSL:
 
 				#Handle output to make image
 				data = 'Command: openssl.exe s_client -connect ' + self.host + ':' + self.port + ' -fallback_scsv ' + protocolFlag + '\n\n'
-				data += self.output.split('-----BEGIN CERTIFICATE-----')[0]
-				data += '[redacted]'
-				data += self.output.split('-----END CERTIFICATE-----')[1]
+				if '-----BEGIN CERTIFICATE-----' in self.output:
+					data += self.output.split('-----BEGIN CERTIFICATE-----')[0]
+					data += '[redacted]'
+					data += self.output.split('-----END CERTIFICATE-----')[1]
+				else:
+					data += self.output
 
 				for line in range(len(data)):
 					if 'New,' in data[line] and ', Cipher is ' in data[line]:
