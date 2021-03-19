@@ -4,7 +4,7 @@ chardet==3.0.4
 cryptography==2.9
 idna==2.9
 nassl==3.0.0
-Pillow==7.1.2
+Pillow==8.1.1
 prettytable==0.7.2
 pycparser==2.20
 requests==2.23.0
